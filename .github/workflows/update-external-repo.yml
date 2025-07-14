@@ -96,8 +96,14 @@ jobs:
           gh repo clone ${{ github.repository_owner }}/${{ github.event.inputs.target_repo }} trh-sdk_fork
           cd trh-sdk_fork
           
-          # upstream 설정 및 브랜치 생성
-          git remote add upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
+          # upstream 설정
+          if git remote | grep -q "^upstream$"; then
+            git remote set-url upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
+          else
+            git remote add upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
+          fi
+          
+          # 최신 변경사항 가져오기
           git fetch upstream
           git checkout -b ${{ steps.vars.outputs.branch_name }} upstream/main
           
