@@ -71,93 +71,46 @@ jobs:
           echo "Content generated:"
           cat update_content.json
 
-      - name: Fork target repository
+      - name: Complete fork setup and update
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 대상 저장소 정보 확인
-          echo "Checking target repository: ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}"
+          set -e  # 에러 시 중단
           
-          # Fork 생성 (이미 있으면 skip)
-          gh repo fork ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }} \
-            --clone=false \
-            --remote=false \
-            --default-branch-only || echo "Fork already exists or failed"
-
-      - name: Clone and update fork
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Fork 저장소 clone
-          gh repo clone ${{ github.repository_owner }}/${{ steps.vars.outputs.target_repo }} trh-sdk_fork
-          cd trh-sdk_fork
-
-          # 기존 리모트 확인
-          echo "Current remotes:"
-          git remote -v
+          echo "🚀 Starting automated update process..."
           
-          # upstream 리모트 설정 (안전하게)
-          if git remote | grep -q "^upstream$"; then
-            echo "Upstream already exists, updating URL..."
-            git remote set-url upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
-          else
-            echo "Adding upstream remote..."
-            git remote add upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
+          # Fork 확인 및 생성
+          if ! gh repo view ${{ github.repository_owner }}/${{ github.event.inputs.target_repo }} >/dev/null 2>&1; then
+            echo "Creating fork..."
+            gh repo fork ${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }} --clone=false
+            sleep 10
           fi
           
-          # 리모트 재확인
-          echo "Updated remotes:"
-          git remote -v
-
-          # 최신 변경사항 가져오기
+          # Git 설정
+          git config --global credential.helper store
+          echo "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com" > ~/.git-credentials
+          git config --global user.name "na4980-automation[bot]"
+          git config --global user.email "na4980-automation[bot]@users.noreply.github.com"
+          
+          # 클론
+          gh repo clone ${{ github.repository_owner }}/${{ github.event.inputs.target_repo }} trh-sdk_fork
+          cd trh-sdk_fork
+          
+          # upstream 설정 및 브랜치 생성
+          git remote add upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
           git fetch upstream
           git checkout -b ${{ steps.vars.outputs.branch_name }} upstream/main
           
-          # 파일 업데이트
+          # 파일 수정
           mkdir -p config
-          cp ../update_content.json config/automation_config.json
+          echo '{"updated":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > config/automation_config.json
           
-          # README 업데이트
-          echo "" >> README.md
-          echo "<!-- Updated by automation on $(date -u +%Y-%m-%dT%H:%M:%SZ) -->" >> README.md
-          echo "Last automation update: ${{ steps.vars.outputs.update_message }}" >> README.md
-          
-          # 새 파일 생성 (예시)
-          cat > automation_info.md << EOF
-          # Automation Update
-          
-          This file was automatically updated by na4980/automation-repo.
-          
-          **Update Details:**
-          - Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-          - Message: ${{ steps.vars.outputs.update_message }}
-          - Source: na4980/automation-repo
-          - Target: ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}
-          
-          **Configuration Updates:**
-          - Version: 1.2.3
-          - New features enabled
-          - Settings optimized
-          EOF
-          
-          # Git 설정
-          git config user.name "na4980-automation[bot]"
-          git config user.email "na4980-automation[bot]@users.noreply.github.com"
-          
-          # 변경사항 커밋
+          # 커밋 및 푸시
           git add .
-          git commit -m "🤖 Automated update: ${{ steps.vars.outputs.update_message }}
-
-          Updates made by na4980/automation-repo:
-          - Updated configuration files
-          - Added automation info
-          - Updated README
-          
-          Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          
-          # Fork에 푸시
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/${{ steps.vars.outputs.target_repo }}.git
+          git commit -m "🤖 Automated update: ${{ steps.vars.outputs.update_message }}"
           git push origin ${{ steps.vars.outputs.branch_name }}
+          
+          echo "✅ Update completed successfully"
 
       - name: Create Pull Request
         env:
