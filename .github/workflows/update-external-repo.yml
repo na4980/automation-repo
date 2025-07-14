@@ -91,6 +91,9 @@ jobs:
           # Fork 저장소 clone
           gh repo clone ${{ github.repository_owner }}/${{ steps.vars.outputs.target_repo }} trh-sdk_fork
           cd trh-sdk_fork
+
+          # 기존 upstream 제거
+          git remote remove upstream || true
           
           # 원본 저장소를 upstream으로 추가
           git remote add upstream https://github.com/${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}.git
