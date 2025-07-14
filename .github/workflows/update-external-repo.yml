@@ -73,6 +73,60 @@ jobs:
           echo "Content generated:"
           cat update_content.json
 
+      - name: Force PAT authentication
+        env:
+          PAT_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 또는 secrets.PERSONAL_ACCESS_TOKEN
+        run: |
+          echo "🔐 Forcing PAT authentication..."
+          
+          # 1. PAT 존재 확인
+          if [ -z "$PAT_TOKEN" ]; then
+            echo "❌ PAT_TOKEN is empty"
+            echo "Please check your repository secrets:"
+            echo "- Go to Settings → Secrets and variables → Actions"
+            echo "- Make sure GITHUB_TOKEN contains your PAT"
+            exit 1
+          fi
+          
+          # 2. PAT 길이 확인 (GitHub PAT는 40자 이상)
+          if [ ${#PAT_TOKEN} -lt 40 ]; then
+            echo "❌ PAT_TOKEN seems too short: ${#PAT_TOKEN} characters"
+            echo "GitHub PATs should be 40+ characters"
+            exit 1
+          fi
+          
+          # 3. PAT 앞자리 확인
+          prefix=$(echo "$PAT_TOKEN" | cut -c1-4)
+          echo "PAT prefix: $prefix"
+          if [[ "$prefix" != "ghp_" && "$prefix" != "gho_" && "$prefix" != "ghu_" ]]; then
+            echo "⚠️ Warning: PAT doesn't start with expected prefix"
+          fi
+          
+          # 4. GitHub CLI 인증 (기존 인증 제거 후 재설정)
+          gh auth logout 2>/dev/null || true
+          echo "$PAT_TOKEN" | gh auth login --with-token
+          
+          # 5. 인증 상태 확인
+          if gh auth status; then
+            echo "✅ GitHub CLI authenticated with PAT"
+            echo "Authenticated user: $(gh api user --jq '.login')"
+          else
+            echo "❌ GitHub CLI authentication failed"
+            exit 1
+          fi
+          
+          # 6. Git credential 강제 설정
+          git config --global --unset-all credential.helper 2>/dev/null || true
+          git config --global credential.helper store
+          echo "https://x-access-token:$PAT_TOKEN@github.com" > ~/.git-credentials
+          chmod 600 ~/.git-credentials
+          
+          # 7. Git 사용자 설정
+          git config --global user.name "na4980-automation[bot]"
+          git config --global user.email "na4980-automation[bot]@users.noreply.github.com"
+          
+          echo "✅ PAT authentication setup completed"
+
       - name: Complete fork setup and update
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
