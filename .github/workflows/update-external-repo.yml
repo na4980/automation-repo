@@ -1,0 +1,199 @@
+# .github/workflows/update-external-repo.yml
+name: Update External Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_owner:
+        description: 'Target repository owner'
+        required: true
+        default: 'tokamak-network'
+      target_repo:
+        description: 'Target repository name'
+        required: true
+        default: 'trh-sdk'
+      update_message:
+        description: 'Update message'
+        required: true
+        default: 'Update configuration'
+
+  repository_dispatch:
+    types: [update-external-repo]
+
+jobs:
+  update-external-repo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      
+    steps:
+      - name: Setup variables
+        id: vars
+        run: |
+          # workflow_dispatch 또는 repository_dispatch에서 변수 설정
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "target_owner=${{ github.event.inputs.target_owner }}" >> $GITHUB_OUTPUT
+            echo "target_repo=${{ github.event.inputs.target_repo }}" >> $GITHUB_OUTPUT
+            echo "update_message=${{ github.event.inputs.update_message }}" >> $GITHUB_OUTPUT
+          else
+            echo "target_owner=${{ github.event.client_payload.target_owner }}" >> $GITHUB_OUTPUT
+            echo "target_repo=${{ github.event.client_payload.target_repo }}" >> $GITHUB_OUTPUT
+            echo "update_message=${{ github.event.client_payload.update_message }}" >> $GITHUB_OUTPUT
+          fi
+          
+          # 브랜치 이름 생성
+          branch_name="automation-update-$(date +%Y%m%d-%H%M%S)"
+          echo "branch_name=$branch_name" >> $GITHUB_OUTPUT
+
+      - name: Generate update content
+        id: content
+        run: |
+          # 업데이트할 내용 생성
+          cat > update_content.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "updated_by": "alice/automation-repo",
+            "message": "${{ steps.vars.outputs.update_message }}",
+            "version": "1.2.3",
+            "configuration": {
+              "feature_flags": {
+                "new_feature": true,
+                "beta_mode": false
+              },
+              "settings": {
+                "timeout": 30,
+                "retry_count": 3
+              }
+            }
+          }
+          EOF
+          
+          echo "Content generated:"
+          cat update_content.json
+
+      - name: Fork target repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 대상 저장소 정보 확인
+          echo "Checking target repository: ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}"
+          
+          # Fork 생성 (이미 있으면 skip)
+          gh repo fork ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }} \
+            --clone=false \
+            --remote=false \
+            --default-branch-only || echo "Fork already exists or failed"
+
+      - name: Clone and update fork
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Fork 저장소 clone
+          gh repo clone ${{ github.repository_owner }}/${{ steps.vars.outputs.target_repo }} target_repo_fork
+          cd target_repo_fork
+          
+          # 원본 저장소를 upstream으로 추가
+          git remote add upstream https://github.com/${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}.git
+          
+          # 최신 변경사항 가져오기
+          git fetch upstream
+          git checkout -b ${{ steps.vars.outputs.branch_name }} upstream/main
+          
+          # 파일 업데이트
+          mkdir -p config
+          cp ../update_content.json config/automation_config.json
+          
+          # README 업데이트
+          echo "" >> README.md
+          echo "<!-- Updated by automation on $(date -u +%Y-%m-%dT%H:%M:%SZ) -->" >> README.md
+          echo "Last automation update: ${{ steps.vars.outputs.update_message }}" >> README.md
+          
+          # 새 파일 생성 (예시)
+          cat > automation_info.md << EOF
+          # Automation Update
+          
+          This file was automatically updated by alice/automation-repo.
+          
+          **Update Details:**
+          - Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          - Message: ${{ steps.vars.outputs.update_message }}
+          - Source: alice/automation-repo
+          - Target: ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}
+          
+          **Configuration Updates:**
+          - Version: 1.2.3
+          - New features enabled
+          - Settings optimized
+          EOF
+          
+          # Git 설정
+          git config user.name "alice-automation[bot]"
+          git config user.email "alice-automation[bot]@users.noreply.github.com"
+          
+          # 변경사항 커밋
+          git add .
+          git commit -m "🤖 Automated update: ${{ steps.vars.outputs.update_message }}
+
+          Updates made by alice/automation-repo:
+          - Updated configuration files
+          - Added automation info
+          - Updated README
+          
+          Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          
+          # Fork에 푸시
+          git push origin ${{ steps.vars.outputs.branch_name }}
+
+      - name: Create Pull Request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd target_repo_fork
+          
+          # PR 생성
+          gh pr create \
+            --repo ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }} \
+            --title "🤖 Automated Update: ${{ steps.vars.outputs.update_message }}" \
+            --body "## Automated Update from alice/automation-repo
+
+          **Update Summary:**
+          - **Message:** ${{ steps.vars.outputs.update_message }}
+          - **Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          - **Source:** alice/automation-repo
+          - **Branch:** ${{ steps.vars.outputs.branch_name }}
+
+          ### Changes Made:
+          - ✅ Updated \`config/automation_config.json\`
+          - ✅ Added \`automation_info.md\`
+          - ✅ Updated \`README.md\`
+
+          ### Configuration Updates:
+          - Version bumped to 1.2.3
+          - Enabled new feature flags
+          - Optimized timeout settings
+
+          ### Files Changed:
+          \`\`\`
+          config/automation_config.json
+          automation_info.md
+          README.md
+          \`\`\`
+
+          ---
+          *This PR was automatically created by [alice/automation-repo](https://github.com/alice/automation-repo)*
+          
+          **Review Checklist:**
+          - [ ] Configuration changes look correct
+          - [ ] No sensitive information exposed
+          - [ ] Tests pass (if applicable)
+          
+          cc @${{ steps.vars.outputs.target_owner }}" \
+            --base main \
+            --head ${{ github.repository_owner }}:${{ steps.vars.outputs.branch_name }} \
+            --label "automation,configuration,enhancement"
+
+      - name: Output results
+        run: |
+          echo "✅ Successfully created PR in ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}"
+          echo "Branch: ${{ steps.vars.outputs.branch_name }}"
+          echo "You can view the PR at: https://github.com/${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}/pulls"
