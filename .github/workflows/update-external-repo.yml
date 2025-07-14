@@ -92,11 +92,22 @@ jobs:
           gh repo clone ${{ github.repository_owner }}/${{ steps.vars.outputs.target_repo }} trh-sdk_fork
           cd trh-sdk_fork
 
-          # 기존 upstream 제거
-          git remote remove upstream || true
+          # 기존 리모트 확인
+          echo "Current remotes:"
+          git remote -v
           
-          # 원본 저장소를 upstream으로 추가
-          git remote add upstream https://github.com/${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}.git
+          # upstream 리모트 설정 (안전하게)
+          if git remote | grep -q "^upstream$"; then
+            echo "Upstream already exists, updating URL..."
+            git remote set-url upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
+          else
+            echo "Adding upstream remote..."
+            git remote add upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
+          fi
+          
+          # 리모트 재확인
+          echo "Updated remotes:"
+          git remote -v
           
           # 최신 변경사항 가져오기
           git fetch upstream
