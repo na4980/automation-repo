@@ -108,7 +108,7 @@ jobs:
           # 리모트 재확인
           echo "Updated remotes:"
           git remote -v
-          
+
           # 최신 변경사항 가져오기
           git fetch upstream
           git checkout -b ${{ steps.vars.outputs.branch_name }} upstream/main
@@ -156,6 +156,7 @@ jobs:
           Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           
           # Fork에 푸시
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/${{ steps.vars.outputs.target_repo }}.git
           git push origin ${{ steps.vars.outputs.branch_name }}
 
       - name: Create Pull Request
