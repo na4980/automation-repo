@@ -1,4 +1,3 @@
-# .github/workflows/update-external-repo.yml
 name: Update External Repository
 
 on:
@@ -15,215 +14,128 @@ on:
       update_message:
         description: 'Update message'
         required: true
-        default: 'Update configuration'
-
-  repository_dispatch:
-    types: [update-external-repo]
+        default: 'Automated update'
 
 jobs:
   update-external-repo:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-      pull-requests: write    # PR 관련 작업
-
+    permissions: write-all
+    
     steps:
       - name: Setup variables
         id: vars
         run: |
-          # workflow_dispatch 또는 repository_dispatch에서 변수 설정
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "target_owner=${{ github.event.inputs.target_owner }}" >> $GITHUB_OUTPUT
-            echo "target_repo=${{ github.event.inputs.target_repo }}" >> $GITHUB_OUTPUT
-            echo "update_message=${{ github.event.inputs.update_message }}" >> $GITHUB_OUTPUT
-          else
-            echo "target_owner=${{ github.event.client_payload.target_owner }}" >> $GITHUB_OUTPUT
-            echo "target_repo=${{ github.event.client_payload.target_repo }}" >> $GITHUB_OUTPUT
-            echo "update_message=${{ github.event.client_payload.update_message }}" >> $GITHUB_OUTPUT
-          fi
-          
-          # 브랜치 이름 생성
           branch_name="automation-update-$(date +%Y%m%d-%H%M%S)"
           echo "branch_name=$branch_name" >> $GITHUB_OUTPUT
 
-      - name: Generate update content
-        id: content
-        run: |
-          # 업데이트할 내용 생성
-          cat > update_content.json << EOF
-          {
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "updated_by": "na4980/automation-repo",
-            "message": "${{ steps.vars.outputs.update_message }}",
-            "version": "1.2.3",
-            "configuration": {
-              "feature_flags": {
-                "new_feature": true,
-                "beta_mode": false
-              },
-              "settings": {
-                "timeout": 30,
-                "retry_count": 3
-              }
-            }
-          }
-          EOF
-          
-          echo "Content generated:"
-          cat update_content.json
-
-      - name: Force PAT authentication
+      - name: Setup authentication with custom PAT
         env:
-          PAT_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 또는 secrets.PERSONAL_ACCESS_TOKEN
+          # 🔑 새로운 Secret 이름 사용 (GITHUB_TOKEN과 충돌 방지)
+          MY_PERSONAL_TOKEN: ${{ secrets.MY_PERSONAL_TOKEN }}
         run: |
-          echo "🔐 Forcing PAT authentication..."
+          echo "🔐 Setting up custom PAT authentication..."
           
-          # 1. PAT 존재 확인
-          if [ -z "$PAT_TOKEN" ]; then
-            echo "❌ PAT_TOKEN is empty"
-            echo "Please check your repository secrets:"
-            echo "- Go to Settings → Secrets and variables → Actions"
-            echo "- Make sure GITHUB_TOKEN contains your PAT"
+          # PAT 존재 확인
+          if [ -z "$MY_PERSONAL_TOKEN" ]; then
+            echo "❌ MY_PERSONAL_TOKEN secret not found!"
+            echo ""
+            echo "Please create a new repository secret:"
+            echo "1. Go to: Settings → Secrets and variables → Actions"
+            echo "2. Click: New repository secret"
+            echo "3. Name: MY_PERSONAL_TOKEN"
+            echo "4. Secret: [Your GitHub PAT starting with ghp_]"
             exit 1
           fi
           
-          # 2. PAT 길이 확인 (GitHub PAT는 40자 이상)
-          if [ ${#PAT_TOKEN} -lt 40 ]; then
-            echo "❌ PAT_TOKEN seems too short: ${#PAT_TOKEN} characters"
-            echo "GitHub PATs should be 40+ characters"
-            exit 1
-          fi
-          
-          # 3. PAT 앞자리 확인
-          prefix=$(echo "$PAT_TOKEN" | cut -c1-4)
-          echo "PAT prefix: $prefix"
-          if [[ "$prefix" != "ghp_" && "$prefix" != "gho_" && "$prefix" != "ghu_" ]]; then
-            echo "⚠️ Warning: PAT doesn't start with expected prefix"
-          fi
-          
-          # 4. GitHub CLI 인증 (기존 인증 제거 후 재설정)
-          gh auth logout 2>/dev/null || true
-          echo "$PAT_TOKEN" | gh auth login --with-token
-          
-          # 5. 인증 상태 확인
-          if gh auth status; then
-            echo "✅ GitHub CLI authenticated with PAT"
-            echo "Authenticated user: $(gh api user --jq '.login')"
+          # PAT 유효성 확인
+          echo "Testing PAT validity..."
+          if curl -s -H "Authorization: Bearer $MY_PERSONAL_TOKEN" https://api.github.com/user | jq -r '.login' | grep -v null; then
+            echo "✅ PAT is valid"
           else
-            echo "❌ GitHub CLI authentication failed"
+            echo "❌ PAT is invalid or expired"
+            echo "Please generate a new PAT with 'public_repo' scope"
             exit 1
           fi
           
-          # 6. Git credential 강제 설정
-          git config --global --unset-all credential.helper 2>/dev/null || true
+          # GitHub CLI 인증 (기본 토큰 제거)
+          gh auth logout 2>/dev/null || true
+          echo "$MY_PERSONAL_TOKEN" | gh auth login --with-token
+          
+          # Git 설정
+          git config --global user.name "na4980"
+          git config --global user.email "na4980@users.noreply.github.com"
           git config --global credential.helper store
-          echo "https://x-access-token:$PAT_TOKEN@github.com" > ~/.git-credentials
-          chmod 600 ~/.git-credentials
+          echo "https://x-access-token:$MY_PERSONAL_TOKEN@github.com" > ~/.git-credentials
           
-          # 7. Git 사용자 설정
-          git config --global user.name "na4980-automation[bot]"
-          git config --global user.email "na4980-automation[bot]@users.noreply.github.com"
-          
-          echo "✅ PAT authentication setup completed"
+          echo "✅ Authentication setup completed"
 
-      - name: Complete fork setup and update
+      - name: Verify authentication
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MY_PERSONAL_TOKEN: ${{ secrets.MY_PERSONAL_TOKEN }}
         run: |
-          set -e  # 에러 시 중단
+          echo "🔍 Verifying authentication..."
           
-          echo "🚀 Starting automated update process..."
+          # GitHub CLI 상태 확인
+          gh auth status
           
-          # Fork 확인 및 생성
-          if ! gh repo view ${{ github.repository_owner }}/${{ github.event.inputs.target_repo }} >/dev/null 2>&1; then
+          # API 직접 테스트
+          user=$(curl -s -H "Authorization: Bearer $MY_PERSONAL_TOKEN" https://api.github.com/user | jq -r '.login')
+          echo "Authenticated as: $user"
+          
+          # 저장소 접근 테스트
+          echo "Testing repository access..."
+          gh repo view ${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}
+
+      - name: Ensure fork exists
+        env:
+          MY_PERSONAL_TOKEN: ${{ secrets.MY_PERSONAL_TOKEN }}
+        run: |
+          echo "🍴 Managing fork..."
+          
+          if gh repo view ${{ github.repository_owner }}/${{ github.event.inputs.target_repo }} >/dev/null 2>&1; then
+            echo "✅ Fork already exists"
+          else
             echo "Creating fork..."
             gh repo fork ${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }} --clone=false
             sleep 10
           fi
-          
-          # Git 설정
-          git config --global credential.helper store
-          echo "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com" > ~/.git-credentials
-          git config --global user.name "na4980-automation[bot]"
-          git config --global user.email "na4980-automation[bot]@users.noreply.github.com"
+
+      - name: Clone and update repository
+        env:
+          MY_PERSONAL_TOKEN: ${{ secrets.MY_PERSONAL_TOKEN }}
+        run: |
+          echo "📥 Cloning and updating repository..."
           
           # 클론
-          gh repo clone ${{ github.repository_owner }}/${{ github.event.inputs.target_repo }} trh-sdk_fork
+          rm -rf trh-sdk_fork
+          git clone https://x-access-token:$MY_PERSONAL_TOKEN@github.com/${{ github.repository_owner }}/${{ github.event.inputs.target_repo }}.git trh-sdk_fork
           cd trh-sdk_fork
           
           # upstream 설정
-          if git remote | grep -q "^upstream$"; then
-            git remote set-url upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
-          else
-            git remote add upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
-          fi
-          
-          # 최신 변경사항 가져오기
+          git remote add upstream https://github.com/${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }}.git
           git fetch upstream
           git checkout -b ${{ steps.vars.outputs.branch_name }} upstream/main
           
           # 파일 수정
           mkdir -p config
-          echo '{"updated":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > config/automation_config.json
+          echo '{"updated":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","message":"${{ github.event.inputs.update_message }}"}' > config/automation_config.json
           
-          # 커밋 및 푸시
+          # 커밋
           git add .
-          git commit -m "🤖 Automated update: ${{ steps.vars.outputs.update_message }}"
-          git push origin ${{ steps.vars.outputs.branch_name }}
+          git commit -m "🤖 Automated update: ${{ github.event.inputs.update_message }}"
           
-          echo "✅ Update completed successfully"
+          # 푸시
+          git push https://x-access-token:$MY_PERSONAL_TOKEN@github.com/${{ github.repository_owner }}/${{ github.event.inputs.target_repo }}.git ${{ steps.vars.outputs.branch_name }}
 
       - name: Create Pull Request
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MY_PERSONAL_TOKEN: ${{ secrets.MY_PERSONAL_TOKEN }}
         run: |
-          cd trh-sdk_fork
+          echo "📝 Creating pull request..."
           
-          # PR 생성
           gh pr create \
-            --repo ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }} \
-            --title "🤖 Automated Update: ${{ steps.vars.outputs.update_message }}" \
-            --body "## Automated Update from na4980/automation-repo
-
-          **Update Summary:**
-          - **Message:** ${{ steps.vars.outputs.update_message }}
-          - **Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
-          - **Source:** na4980/automation-repo
-          - **Branch:** ${{ steps.vars.outputs.branch_name }}
-
-          ### Changes Made:
-          - ✅ Updated \`config/automation_config.json\`
-          - ✅ Added \`automation_info.md\`
-          - ✅ Updated \`README.md\`
-
-          ### Configuration Updates:
-          - Version bumped to 1.2.3
-          - Enabled new feature flags
-          - Optimized timeout settings
-
-          ### Files Changed:
-          \`\`\`
-          config/automation_config.json
-          automation_info.md
-          README.md
-          \`\`\`
-
-          ---
-          *This PR was automatically created by [na4980/automation-repo](https://github.com/na4980/automation-repo)*
-          
-          **Review Checklist:**
-          - [ ] Configuration changes look correct
-          - [ ] No sensitive information exposed
-          - [ ] Tests pass (if applicable)
-          
-          cc @${{ steps.vars.outputs.target_owner }}" \
+            --repo ${{ github.event.inputs.target_owner }}/${{ github.event.inputs.target_repo }} \
+            --title "🤖 Automated update: ${{ github.event.inputs.update_message }}" \
+            --body "Automated update from na4980/automation-repo" \
             --base main \
-            --head ${{ github.repository_owner }}:${{ steps.vars.outputs.branch_name }} \
-            --label "automation,configuration,enhancement"
-
-      - name: Output results
-        run: |
-          echo "✅ Successfully created PR in ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}"
-          echo "Branch: ${{ steps.vars.outputs.branch_name }}"
-          echo "You can view the PR at: https://github.com/${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}/pulls"
+            --head ${{ github.repository_owner }}:${{ steps.vars.outputs.branch_name }}
