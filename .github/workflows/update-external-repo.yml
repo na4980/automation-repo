@@ -25,6 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: write
+      pull-requests: write    # PR 관련 작업
+      metadata: read          # 메타데이터 읽기
+
       
     steps:
       - name: Setup variables
