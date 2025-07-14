@@ -52,7 +52,7 @@ jobs:
           cat > update_content.json << EOF
           {
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "updated_by": "alice/automation-repo",
+            "updated_by": "na4980/automation-repo",
             "message": "${{ steps.vars.outputs.update_message }}",
             "version": "1.2.3",
             "configuration": {
@@ -89,8 +89,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Fork 저장소 clone
-          gh repo clone ${{ github.repository_owner }}/${{ steps.vars.outputs.target_repo }} target_repo_fork
-          cd target_repo_fork
+          gh repo clone ${{ github.repository_owner }}/${{ steps.vars.outputs.target_repo }} trh-sdk_fork
+          cd trh-sdk_fork
           
           # 원본 저장소를 upstream으로 추가
           git remote add upstream https://github.com/${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}.git
@@ -112,12 +112,12 @@ jobs:
           cat > automation_info.md << EOF
           # Automation Update
           
-          This file was automatically updated by alice/automation-repo.
+          This file was automatically updated by na4980/automation-repo.
           
           **Update Details:**
           - Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
           - Message: ${{ steps.vars.outputs.update_message }}
-          - Source: alice/automation-repo
+          - Source: na4980/automation-repo
           - Target: ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }}
           
           **Configuration Updates:**
@@ -127,14 +127,14 @@ jobs:
           EOF
           
           # Git 설정
-          git config user.name "alice-automation[bot]"
-          git config user.email "alice-automation[bot]@users.noreply.github.com"
+          git config user.name "na4980-automation[bot]"
+          git config user.email "na4980-automation[bot]@users.noreply.github.com"
           
           # 변경사항 커밋
           git add .
           git commit -m "🤖 Automated update: ${{ steps.vars.outputs.update_message }}
 
-          Updates made by alice/automation-repo:
+          Updates made by na4980/automation-repo:
           - Updated configuration files
           - Added automation info
           - Updated README
@@ -148,18 +148,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd target_repo_fork
+          cd trh-sdk_fork
           
           # PR 생성
           gh pr create \
             --repo ${{ steps.vars.outputs.target_owner }}/${{ steps.vars.outputs.target_repo }} \
             --title "🤖 Automated Update: ${{ steps.vars.outputs.update_message }}" \
-            --body "## Automated Update from alice/automation-repo
+            --body "## Automated Update from na4980/automation-repo
 
           **Update Summary:**
           - **Message:** ${{ steps.vars.outputs.update_message }}
           - **Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
-          - **Source:** alice/automation-repo
+          - **Source:** na4980/automation-repo
           - **Branch:** ${{ steps.vars.outputs.branch_name }}
 
           ### Changes Made:
@@ -180,7 +180,7 @@ jobs:
           \`\`\`
 
           ---
-          *This PR was automatically created by [alice/automation-repo](https://github.com/alice/automation-repo)*
+          *This PR was automatically created by [na4980/automation-repo](https://github.com/na4980/automation-repo)*
           
           **Review Checklist:**
           - [ ] Configuration changes look correct
